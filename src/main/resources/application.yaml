@@ -2,5 +2,11 @@ spring.application.name: hackathon
 
 bot-config:
   name: hackathon_mts
-  token: 7175355685:AAF9E3BhFWanZ8v3D87uOR8FwolKirXhAe0
-  owner: 5498170426
+  token: "secret"
+
+twitch:
+  client: "secret"
+  token: "secret"
+
+igdb:
+  access_token: "secret"
