@@ -5,6 +5,7 @@ import com.mts.hackathon.config.BotConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.commands.SetMyCommands;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
@@ -17,9 +18,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
-@Component
+@Service
 public class TelegramBot extends TelegramLongPollingBot {
     private final BotConfig config;
+    private final SearchService searchService;
+
+    private enum UserState {
+        IDLE, AWAITING_START_MESSAGE
+    }
+
+    private UserState currentState = UserState.IDLE;
 
     static final String START_TEXT = """
             Привет, это бот-помощник в выборе игры :) \n
@@ -30,15 +38,15 @@ public class TelegramBot extends TelegramLongPollingBot {
             """;
 
     static final String ERROR_TEXT = "Error occurred: ";
-    
+
     @Autowired
-    public TelegramBot(BotConfig config) {
+    public TelegramBot(BotConfig config, SearchService searchService) {
         this.config = config;
+        this.searchService = searchService;
         List<BotCommand> listOfCommands = new ArrayList<>();
         listOfCommands.add(new BotCommand("/start", "Старт бота"));
-        listOfCommands.add(new BotCommand("/genres", "show game with genres"));
-        listOfCommands.add(new BotCommand("/publisher", "show publisher games"));
-        listOfCommands.add(new BotCommand("/games", "show games"));
+        listOfCommands.add(new BotCommand("/topGames", "Show top 5 games by critic"));
+        listOfCommands.add(new BotCommand("/games", "Show games"));
         try {
             this.execute(new SetMyCommands(listOfCommands, new BotCommandScopeDefault(), null));
         } catch (TelegramApiException e) {
@@ -59,25 +67,43 @@ public class TelegramBot extends TelegramLongPollingBot {
 
     @Override
     public void onUpdateReceived(Update update) {
-        Long chatId = update.getMessage().getChatId();
-        String messageText = update.getMessage().getText();
-
-        switch (messageText) {
-            case "/start":
-                prepareAndSendMessage(chatId, START_TEXT);
-                break;
-            case "/publisher":
-                break;
-            case "/games":
-                break;
-            case "/genres":
-                break;
-            default:
-                prepareAndSendMessage(chatId, "Извини, такой команды у нас нет :(");
+        if (update.hasMessage() && update.getMessage().hasText()) {
+            String messageText = update.getMessage().getText();
+            switch (currentState) {
+                case IDLE:
+                    handleIdleState(update.getMessage().getChatId(), messageText);
+                    break;
+                case AWAITING_START_MESSAGE:
+                    handleAwaitingStartMessageState(update.getMessage().getChatId(), messageText);
+                    break;
+            }
         }
     }
 
-    private void executeMessage(SendMessage message){
+    private void handleIdleState(Long chatId, String messageText) {
+        switch (messageText) {
+            case "/start":
+                prepareAndSendMessage(chatId, START_TEXT);
+                currentState = UserState.IDLE;
+                break;
+            case "/games":
+                currentState = UserState.AWAITING_START_MESSAGE;
+                prepareAndSendMessage(chatId, "Напиши название интересующей тебя игры");
+                break;
+            case "/genres":
+                currentState = UserState.AWAITING_START_MESSAGE;
+                prepareAndSendMessage(chatId, "Напиши жанр интересующей тебя игры");
+            default:
+                prepareAndSendMessage(chatId, "Извини, такой команды нет :(");
+        }
+    }
+
+    private void handleAwaitingStartMessageState(Long chatId, String messageText) {
+        currentState = UserState.IDLE;
+        prepareAndSendMessage(chatId, searchService.getGameByName(messageText));
+    }
+
+    private void executeMessage(SendMessage message) {
         try {
             execute(message);
         } catch (TelegramApiException e) {
@@ -85,7 +111,7 @@ public class TelegramBot extends TelegramLongPollingBot {
         }
     }
 
-    private void prepareAndSendMessage(long chatId, String textToSend){
+    private void prepareAndSendMessage(long chatId, String textToSend) {
         SendMessage message = new SendMessage();
         message.setChatId(String.valueOf(chatId));
         message.setText(textToSend);
