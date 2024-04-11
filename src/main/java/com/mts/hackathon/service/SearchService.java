@@ -24,7 +24,8 @@ public class SearchService {
     public String getGameByName(String name) {
         List<Game> listOfGames;
         try {
-            listOfGames = ProtoRequestKt.games(igdbWrapper, apiCalypse.fields("*").search(name).limit(1));
+            listOfGames = ProtoRequestKt.games(igdbWrapper, apiCalypse
+                    .fields("name, genres, aggregated_rating, total_rating,url").search(name).limit(3));
         } catch (RequestException e) {
             throw new RuntimeException(e);
         }

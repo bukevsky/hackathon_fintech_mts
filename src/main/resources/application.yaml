@@ -2,11 +2,11 @@ spring.application.name: hackathon
 
 bot-config:
   name: hackathon_mts
-  token: "secret"
+  token:
 
 twitch:
-  client: "secret"
-  token: "secret"
+  client:
+  token:
 
 igdb:
-  access_token: "secret"
+  access_token:
