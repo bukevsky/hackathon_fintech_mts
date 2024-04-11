@@ -2,9 +2,9 @@ package com.mts.hackathon.service;
 
 
 import com.mts.hackathon.config.BotConfig;
+import com.mts.hackathon.config.UserState;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.commands.SetMyCommands;
@@ -15,26 +15,22 @@ import org.telegram.telegrambots.meta.api.objects.commands.scope.BotCommandScope
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @Service
 public class TelegramBot extends TelegramLongPollingBot {
     private final BotConfig config;
     private final SearchService searchService;
-
-    private enum UserState {
-        IDLE, AWAITING_START_MESSAGE
-    }
-
-    private UserState currentState = UserState.IDLE;
+    private final Map<Long, UserState> userStates = new HashMap<>();
 
     static final String START_TEXT = """
-            Привет, это бот-помощник в выборе игры :) \n
-            У нас есть такие команды: \n
-            /genres <какой то текст> \n
-            /publisher <какой то текст> \n
-            /games <какой то текст> \n
+            Привет, это бот-помощник в выборе игры :)
+            У нас есть такие команды:
+            /genres Подскажет топ 5 игр по жанру
+            /games Подскажет информацию по игре
             """;
 
     static final String ERROR_TEXT = "Error occurred: ";
@@ -45,7 +41,7 @@ public class TelegramBot extends TelegramLongPollingBot {
         this.searchService = searchService;
         List<BotCommand> listOfCommands = new ArrayList<>();
         listOfCommands.add(new BotCommand("/start", "Старт бота"));
-        listOfCommands.add(new BotCommand("/topGames", "Show top 5 games by critic"));
+        listOfCommands.add(new BotCommand("/genres", "Show top 5 games by genre"));
         listOfCommands.add(new BotCommand("/games", "Show games"));
         try {
             this.execute(new SetMyCommands(listOfCommands, new BotCommandScopeDefault(), null));
@@ -69,12 +65,18 @@ public class TelegramBot extends TelegramLongPollingBot {
     public void onUpdateReceived(Update update) {
         if (update.hasMessage() && update.getMessage().hasText()) {
             String messageText = update.getMessage().getText();
+            Long chatId = update.getMessage().getChatId();
+
+            UserState currentState = userStates.getOrDefault(chatId, UserState.IDLE);
             switch (currentState) {
                 case IDLE:
-                    handleIdleState(update.getMessage().getChatId(), messageText);
+                    handleIdleState(chatId, messageText);
                     break;
-                case AWAITING_START_MESSAGE:
-                    handleAwaitingStartMessageState(update.getMessage().getChatId(), messageText);
+                case AWAITING_GAME_INPUT:
+                    handleAwaitingGameInputState(chatId, messageText);
+                    break;
+                case AWAITING_GENRE_INPUT:
+                    handleAwaitingGenreInputState(chatId, messageText);
                     break;
             }
         }
@@ -84,22 +86,28 @@ public class TelegramBot extends TelegramLongPollingBot {
         switch (messageText) {
             case "/start":
                 prepareAndSendMessage(chatId, START_TEXT);
-                currentState = UserState.IDLE;
+                userStates.put(chatId, UserState.IDLE);
                 break;
             case "/games":
-                currentState = UserState.AWAITING_START_MESSAGE;
+                userStates.put(chatId, UserState.AWAITING_GAME_INPUT);
                 prepareAndSendMessage(chatId, "Напиши название интересующей тебя игры");
                 break;
             case "/genres":
-                currentState = UserState.AWAITING_START_MESSAGE;
+                userStates.put(chatId, UserState.AWAITING_GENRE_INPUT);
                 prepareAndSendMessage(chatId, "Напиши жанр интересующей тебя игры");
+                break;
             default:
-                prepareAndSendMessage(chatId, "Извини, такой команды нет :(");
+                prepareAndSendMessage(chatId, "Извини, я тебя не понял");
+                break;
         }
     }
 
-    private void handleAwaitingStartMessageState(Long chatId, String messageText) {
-        currentState = UserState.IDLE;
+    private void handleAwaitingGameInputState(Long chatId, String messageText) {
+        userStates.put(chatId, UserState.IDLE);
+        prepareAndSendMessage(chatId, searchService.getGameByName(messageText));
+    }
+    private void handleAwaitingGenreInputState(Long chatId, String messageText) {
+        userStates.put(chatId, UserState.IDLE);
         prepareAndSendMessage(chatId, searchService.getGameByName(messageText));
     }
 
